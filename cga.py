@@ -17,11 +17,11 @@ import chess.uci
 
 __author__ = "Carlos Alamo"
 __email__ = "my@email.com"
-__date__ = "2017-02-17"
-__version__ = "0.90"
+__date__ = "2017-02-26"
+__version__ = "1.00"
 
 
-COLOURS = ['white', 'black']
+COLOURS = ['White', 'Black']
 NONAME = 'Noname'
 POSITIONS = [1, 2, 3]
 
@@ -157,9 +157,9 @@ class Player(object):
             if self.name == NONAME:
                 sides = COLOURS
             elif self.name == game.headers['White']:
-                sides = ['white']
+                sides = ['White']
             elif self.name == game.headers['Black']:
-                sides = ['black']
+                sides = ['Black']
             for side in sides:
                 self.engine_stats['cp_avg'].append(cp_avg[side])
                 self.engine_stats['diff_avg'].append(diff_avg[side])
@@ -195,19 +195,24 @@ class Player(object):
         """The total number of moves done by the player."""
         for game in self.all_games:
             for colour in COLOURS:
-                self.number_plys += game.number_plys[colour]
+                if self.name == game.headers[colour]:
+                    self.number_plys += game.number_plys[colour]
 
     def print_stats(self):
         """Print statistics of the player."""
-        stats_str = ''
+        position_accumulative = 0
+        stats_str = 'Player: {:s}\n'.format(self.name)
         stats_str += 'Number of games: {:d}\n'.format(len(self.all_games))
         stats_str += 'Number of plys: {:d}\n'.format(self.number_plys)
         stats_str += 'Averages:\n'
-        stats_str += ' cp:   {:5.2f}\n'.format(self.cp_avg)
-        stats_str += ' diff: {:5.2f}\n'.format(self.diff_avg)
+        stats_str += ' cp:   {:+5.2f}\n'.format(self.cp_avg)
+        stats_str += ' diff: {:+5.2f}\n'.format(self.diff_avg)
         for pos in POSITIONS:
-            stats_str += ' pos {:d}: {:5.2f}%\n'.\
-                format(pos, self.position_avg[pos])
+            position_accumulative += self.position_avg[pos]
+            stats_str += ' pos {:d}: {:5.2f}% ({:5.2f}%)\n'.\
+                format(pos,
+                       self.position_avg[pos],
+                       position_accumulative)
         stats_str += ' top 3: {:5.2f}%\n'.format(self.top_3_avg)
         return stats_str
 
@@ -289,16 +294,16 @@ class Game(chess.pgn.Game):
 
             Returns:
         """
-        self.analyzed_game = {'white': white_moves,
-                              'black': black_moves}
-        self.number_plys = {'white': len(self.analyzed_game['white']),
-                            'black': len(self.analyzed_game['black'])}
-        self.pos_dict = {'white': {},
-                         'black': {}}
-        self.avg_diff = {'white': 0.0,
-                         'black': 0.0}
-        self.avg_cp = {'white': 0.0,
-                       'black': 0.0}
+        self.analyzed_game = {'White': white_moves,
+                              'Black': black_moves}
+        self.number_plys = {'White': len(self.analyzed_game['White']),
+                            'Black': len(self.analyzed_game['Black'])}
+        self.pos_dict = {'White': {},
+                         'Black': {}}
+        self.avg_diff = {'White': 0.0,
+                         'Black': 0.0}
+        self.avg_cp = {'White': 0.0,
+                       'Black': 0.0}
 
     def average_analyzed_game(self):
         """Calculate the averate for player's game.
@@ -313,15 +318,16 @@ class Game(chess.pgn.Game):
                 :rtype pos_list:  dict{}
         """
         for side in COLOURS:
-            cp_diff = []
             move_cp = []
+            cp_diff = []
             pos_dict = {}
             for move in self.analyzed_game[side]:
                 if not isinstance(move, Move):
                     continue
                 if move.move is not None:
                     cp_diff.append(move.cp_diff.cp / 100.0)
-                    score_value = parse_score(move.cp)
+                    # score_value = parse_score(move.cp)
+                    score_value = parse_score(move.bm_score)
                     if score_value[0] != 'M':
                         move_cp.append(float(score_value))
                     if move.best_move_position != 0:
@@ -330,9 +336,14 @@ class Game(chess.pgn.Game):
                         else:
                             pos_dict[move.best_move_position] += 1
             total_moves = float(len(cp_diff))
-            self.pos_dict[side] = pos_dict
-            self.avg_diff[side] = sum(cp_diff) / total_moves
-            self.avg_cp[side] = sum(move_cp) / total_moves
+            if total_moves != 0:
+                self.pos_dict[side] = pos_dict
+                self.avg_diff[side] = sum(cp_diff) / total_moves
+                self.avg_cp[side] = sum(move_cp) / total_moves
+            else:
+                self.pos_dict[side] = pos_dict
+                self.avg_diff[side] = 0
+                self.avg_cp[side] = 0
 
         return self.avg_cp, self.avg_diff, self.pos_dict
 
@@ -381,13 +392,13 @@ class Game(chess.pgn.Game):
                 :type game_str:     str
         """
         game_str = ''
-        for i in range(len(self.analyzed_game['white'])):
+        for i in range(len(self.analyzed_game['White'])):
             # Move number. white - black
-            white_move = self.analyzed_game['white'][i]
-            if i > len(self.analyzed_game['black']) - 1:
+            white_move = self.analyzed_game['White'][i]
+            if i > len(self.analyzed_game['Black']) - 1:
                 black_move = ''
             else:
-                black_move = self.analyzed_game['black'][i]
+                black_move = self.analyzed_game['Black'][i]
             game_str += '{:3}. {} - {}\n'.\
                 format(i + 1,
                        white_move,
@@ -407,7 +418,7 @@ class Game(chess.pgn.Game):
         """
         game_str = ''
         for side in COLOURS:
-            _, _, _ = self.average_analyzed_game(side)
+            _, _, _ = self.average_analyzed_game()
             game_str += ('{:s}({:s}): avg cp {:+5.2f} avg diff {:+5.2f}\n'.
                          format(side.capitalize(),
                                 self.headers[side.capitalize()],
@@ -422,12 +433,12 @@ class Game(chess.pgn.Game):
 def read_all_pgn(filename):
     """Read all the games of a PGN file.
 
-    Args:
-        :arg filename: Name of the PGN file
-        :type filename: str
-    Returns:
-        :return all_games: List with all the games
-        :rtype: list[chess.game]
+        Args:
+            :arg filename: Name of the PGN file
+            :type filename: str
+        Returns:
+            :return all_games: List with all the games
+            :rtype: list[chess.game]
     """
     logger.info(' Reading PGN file {} '.format(filename).
                 center(80, '*'))
@@ -452,12 +463,12 @@ def read_all_pgn(filename):
 def find_player(pgn_games, name):
     """Find a player in a pgn file using regular expressions.
 
-    Args:
-        pgn_games   (list[chess.pgn.Game]) list of pgn games to parse
-        name        (str) Name or part of the name of the player
-    Returns:
-        If there are several matches, the list of coincidences
-        If there is only one match, the name and the list of matches
+        Args:
+            pgn_games   (list[chess.pgn.Game]) list of pgn games to parse
+            name        (str) Name or part of the name of the player
+        Returns:
+            If there are several matches, the list of coincidences
+            If there is only one match, the name and the list of matches
     """
     logger.info('Searching for players matching: "%s"', name)
     all_found = []
@@ -488,12 +499,12 @@ def find_player(pgn_games, name):
 def parse_score(score):
     """From chess.Score(pv, mate) tupla return the cp or M<n>.
 
-    Args:
-        :arg score:     Score to parse
-        :type score:    chess.uci.Score
-    Returns:
-        :return rscore: Score value
-        :rtype rscore:  str with cp or number of move to mate
+        Args:
+            :arg score:     Score to parse
+            :type score:    chess.uci.Score
+        Returns:
+            :return rscore: Score value
+            :rtype rscore:  str with cp or number of move to mate
     """
     rscore = '0.0'
     if isinstance(score, chess.uci.Score):
@@ -557,6 +568,12 @@ def analyze_game(game, machine, ply=None, tpm=None, player=None):
                                 stats.info['score'][k].mate))
         # Push next move to the board
         node = node.variation(0)
+        if len(stats.info['pv']) == 0:
+            logger.warning('No data for: {} - {}: {}'.
+                           format(game.headers['White'],
+                                  game.headers['Black'],
+                                  node.san()))
+            continue
         new_move = Move(move=node.san(),
                         cp=cp_score,
                         bm=board.variation_san(
@@ -617,6 +634,7 @@ def arguments():
                         help='Chess engine to use for the analysis.\n'
                               'Defalut: SF8.exe')
     parser.add_argument('-p', '--player',
+                        required=True,
                         action='store',
                         type=str,
                         help='Name of the player to analyze.')
@@ -670,6 +688,7 @@ def main():
         4. Create chess engine
         5. Analysis begin
         6. Statistics
+        7. Quit engine
     """
     # 1. Arguments and logging
     args = arguments()
@@ -694,18 +713,22 @@ def main():
     game_number = 1
     t0 = time.time()
     for game in games_to_analyze:
-        logger.info('Analyzing game {} of {}'.
-                    format(game_number, len(games_to_analyze)))
+        # logger.info('Analyzing game {} of {}'.
+        print('Analyzing game {} of {}\r'.
+              format(game_number, len(games_to_analyze))),
         game_extended = analyze_game(game, chess_engine, tpm=args.time)
         logger.debug('{:s}'.format(game_extended.print_analyzed_game()))
         player.insert_game(game_extended)
         game_number += 1
     t1 = time.time()
-    logger.info('Time: {:.2f} seconds'.format(t1 - t0))
+    logger.info('\nTime: {:.2f} seconds'.format(t1 - t0))
     logger.info(40 * '-')
 
     # 6. Statistics
     logger.info(player.print_stats())
+
+    # 7. Quit engine
+    chess_engine.quit()
 
 
 ###############################################################################
@@ -731,3 +754,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print "\nProgram interrupted by CTRL-C.\n"
         sys.exit()
+
